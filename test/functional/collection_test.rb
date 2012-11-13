@@ -146,11 +146,11 @@ class TestCollection < Test::Unit::TestCase
     @@test.create_index("hello", :unique => true)
     a = {"hello" => "world"}
     @@test.insert(a)
-    @@test.insert(a)
+    @@test.insert(a, :w => 0)
     assert(@@db.get_last_error['err'].include?("11000"))
 
     assert_raise OperationFailure do
-      @@test.insert(a, :safe => true)
+      @@test.insert(a)
     end
   end
 
@@ -255,26 +255,26 @@ class TestCollection < Test::Unit::TestCase
     end
   end
 
-  if @@version >= "1.5.1"
-    def test_safe_mode_with_advanced_safe_with_invalid_options
-      assert_raise_error ArgumentError, "Unknown key(s): wtime" do
-        @@test.insert({:foo => 1}, :safe => {:w => 2, :wtime => 1, :fsync => true})
-      end
-      assert_raise_error ArgumentError, "Unknown key(s): wtime" do
-        @@test.update({:foo => 1}, {:foo => 2}, :safe => {:w => 2, :wtime => 1, :fsync => true})
-      end
-
-      assert_raise_error ArgumentError, "Unknown key(s): wtime" do
-        @@test.remove({:foo => 2}, :safe => {:w => 2, :wtime => 1, :fsync => true})
-      end
-    end
-  end
+  #if @@version >= "1.5.1"
+  #  def test_safe_mode_with_advanced_safe_with_invalid_options
+  #    assert_raise_error ArgumentError, "Unknown key(s): wtime" do
+  #      @@test.insert({:foo => 1}, :w => 2, :wtime => 1, :fsync => true)
+  #    end
+  #    assert_raise_error ArgumentError, "Unknown key(s): wtime" do
+  #      @@test.update({:foo => 1}, {:foo => 2}, :w => 2, :wtime => 1, :fsync => true)
+  #    end
+  #
+  #    assert_raise_error ArgumentError, "Unknown key(s): wtime" do
+  #      @@test.remove({:foo => 2}, :w => 2, :wtime => 1, :fsync => true)
+  #    end
+  #  end
+  #end
 
   if @@version >= "2.0.0"
     def test_safe_mode_with_journal_commit_option
-      @@test.insert({:foo => 1}, :safe => {:j => true})
-      @@test.update({:foo => 1}, {:foo => 2}, :safe => {:j => true})
-      @@test.remove({:foo => 2}, :safe => {:j => true})
+      @@test.insert({:foo => 1}, :j => true)
+      @@test.update({:foo => 1}, {:foo => 2}, :j => true)
+      @@test.remove({:foo => 2}, :j => true)
     end
   end
 
@@ -332,7 +332,7 @@ class TestCollection < Test::Unit::TestCase
 
       # Can't change an index.
       assert_raise OperationFailure do
-        @@test.update({}, {"$inc" => {"x" => 1}}, :safe => true)
+        @@test.update({}, {"$inc" => {"x" => 1}})
       end
       @@test.drop
     end
@@ -348,7 +348,7 @@ class TestCollection < Test::Unit::TestCase
 
       # Can't duplicate an index.
       assert_raise OperationFailure do
-        @@test.update({}, {"x" => 10}, :safe => true)
+        @@test.update({}, {"x" => 10})
       end
       @@test.drop
     end
@@ -358,10 +358,10 @@ class TestCollection < Test::Unit::TestCase
     @@test.create_index("hello", :unique => true)
 
     @@test.save("hello" => "world")
-    @@test.save("hello" => "world")
+    @@test.save({"hello" => "world"}, :w => 0)
 
     assert_raise OperationFailure do
-      @@test.save({"hello" => "world"}, :safe => true)
+      @@test.save({"hello" => "world"})
     end
     @@test.drop
   end
@@ -390,7 +390,7 @@ class TestCollection < Test::Unit::TestCase
   end
 
   def test_remove_return_value
-    assert_equal true, @@test.remove({})
+    assert_equal true, @@test.remove({}, :w => 0)
   end
 
   def test_count

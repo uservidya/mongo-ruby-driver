@@ -150,7 +150,7 @@ module Mongo
     end
 
     def valid_opts
-      GENERIC_OPTS + REPL_SET_OPTS
+      super + REPL_SET_OPTS - CLIENT_ONLY_OPTS
     end
 
     def inspect
@@ -437,8 +437,8 @@ module Mongo
     # Parse option hash
     def setup(opts)
       # Refresh
-      @refresh_mode = opts.fetch(:refresh_mode, false)
-      @refresh_interval = opts.fetch(:refresh_interval, 90)
+      @refresh_mode = opts.delete(:refresh_mode) || false
+      @refresh_interval = opts.delete(:refresh_interval) || 90
 
       if @refresh_mode && @refresh_interval < 60
         @refresh_interval = 60 unless ENV['TEST_MODE'] = 'TRUE'
@@ -456,26 +456,26 @@ module Mongo
       if opts[:read_secondary]
         warn ":read_secondary options has now been deprecated and will " +
           "be removed in driver v2.0. Use the :read option instead."
-        @read_secondary = opts.fetch(:read_secondary, false)
+        @read_secondary = opts.delete(:read_secondary) || false
         @read = :secondary_preferred
       else
-        @read = opts.fetch(:read, :primary)
+        @read = opts.delete(:read) || :primary
         Mongo::Support.validate_read_preference(@read)
       end
 
-      @tag_sets = opts.fetch(:tag_sets, [])
-      @acceptable_latency = opts.fetch(:secondary_acceptable_latency_ms, 15)
+      @tag_sets = opts.delete(:tag_sets) || []
+      @acceptable_latency = opts.delete(:secondary_acceptable_latency_ms) || 15
 
       # Replica set name
       if opts[:rs_name]
         warn ":rs_name option has been deprecated and will be removed in v2.0. " +
           "Please use :name instead."
-        @replica_set_name = opts[:rs_name]
+        @replica_set_name = opts.delete(:rs_name)
       else
-        @replica_set_name = opts[:name]
+        @replica_set_name = opts.delete(:name)
       end
 
-      opts[:connect_timeout] = opts[:connect_timeout] || 30
+      opts[:connect_timeout] = opts.delete(:connect_timeout) || 30
 
       super opts
     end

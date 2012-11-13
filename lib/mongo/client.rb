@@ -19,28 +19,32 @@
 require 'set'
 require 'socket'
 require 'thread'
+
 module Mongo
 
   # Instantiates and manages self.connections to MongoDB.
   class Client
     include Mongo::Logging
     include Mongo::Networking
+    include Mongo::Support::WriteConcern
 
     TCPSocket = Mongo::TCPSocket
     Mutex = ::Mutex
     ConditionVariable = ::ConditionVariable
 
-    DEFAULT_HOST = 'localhost'
-    DEFAULT_PORT = 27017
-    DEFAULT_DB_NAME = 'test'
-    GENERIC_OPTS = [:ssl, :auths, :pool_size, :pool_timeout, :timeout, :op_timeout, :connect_timeout, :safe, :logger, :connect]
-    CONNECTION_OPTS = [:slave_ok]
+    DEFAULT_HOST       = 'localhost'
+    DEFAULT_PORT       = 27017
+    DEFAULT_DB_NAME    = 'test'
+    GENERIC_OPTS       = [:ssl, :auths, :logger, :connect]
+    TIMEOUT_OPTS       = [:timeout, :op_timeout, :connect_timeout]
+    POOL_OPTS          = [:pool_size, :pool_timeout]
+    WRITE_CONCERN_OPTS = [:w, :j, :fsync, :wtimeout]
+    CLIENT_ONLY_OPTS   = [:slave_ok]
 
     mongo_thread_local_accessor :connections
 
-    attr_reader :logger, :size, :auths, :primary, :safe, :host_to_try,
-      :pool_size, :connect_timeout, :pool_timeout,
-      :primary_pool, :socket_class, :op_timeout, :tag_sets, :acceptable_latency
+    attr_reader :logger, :size, :auths, :primary, :write_concern, :host_to_try, :pool_size, :connect_timeout,
+      :pool_timeout, :primary_pool, :socket_class, :op_timeout, :tag_sets, :acceptable_latency
 
     # Create a connection to single MongoDB instance.
     #
@@ -530,7 +534,7 @@ module Mongo
     protected
 
     def valid_opts
-      GENERIC_OPTS + CONNECTION_OPTS
+      GENERIC_OPTS + CLIENT_ONLY_OPTS + POOL_OPTS + WRITE_CONCERN_OPTS + TIMEOUT_OPTS
     end
 
     def check_opts(opts)
@@ -544,10 +548,10 @@ module Mongo
     # Parse option hash
     def setup(opts)
       # slave_ok can be true only if one node is specified
-      @slave_ok = opts[:slave_ok]
+      @slave_ok = opts.delete(:slave_ok)
 
       # Determine whether to use SSL.
-      @ssl = opts.fetch(:ssl, false)
+      @ssl = opts.delete(:ssl)
       if @ssl
         @socket_class = Mongo::SSLSocket
       else
@@ -555,26 +559,26 @@ module Mongo
       end
 
       # Authentication objects
-      @auths = opts.fetch(:auths, [])
+      @auths = opts.delete(:auths) || []
 
       # Pool size and timeout.
-      @pool_size = opts[:pool_size] || 1
+      @pool_size = opts.delete(:pool_size) || 1
       if opts[:timeout]
         warn "The :timeout option has been deprecated " +
           "and will be removed in the 2.0 release. Use :pool_timeout instead."
       end
-      @pool_timeout = opts[:pool_timeout] || opts[:timeout] || 5.0
+      @pool_timeout = opts.delete(:pool_timeout) || opts.delete(:timeout) || 5.0
 
       # Timeout on socket read operation.
-      @op_timeout = opts[:op_timeout] || nil
+      @op_timeout = opts.delete(:op_timeout) || nil
 
       # Timeout on socket connect.
-      @connect_timeout = opts[:connect_timeout] || nil
-
-      # Global safe option. This is false by default.
-      @safe = opts[:safe] || false
+      @connect_timeout = opts.delete(:connect_timeout) || nil
 
       @logger = opts.fetch(:logger, nil)
+
+      # Connection level write concern options.
+      @write_concern = get_write_concern(opts)
 
       if @logger
         write_logging_startup_message

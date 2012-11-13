@@ -1,17 +1,19 @@
 require 'test_helper'
 include Mongo
 
-class SafeTest < Test::Unit::TestCase
-  context "Safe mode propogation: " do
+class WriteConcern < Test::Unit::TestCase
+  context "Write concern propogation: " do
     setup do
-      @con = standard_connection(:safe => {:w => 1})
+      @con = standard_connection
       @db  = @con[MONGO_TEST_DB]
       @col = @db['test-safe']
       @col.create_index([[:a, 1]], :unique => true)
       @col.remove
     end
 
-    should "propogate safe option on insert" do
+    #TODO: add write concern tests for remove
+
+    should "propogate write concern options on insert" do
       @col.insert({:a => 1})
 
       assert_raise_error(OperationFailure, "duplicate key") do
@@ -19,12 +21,12 @@ class SafeTest < Test::Unit::TestCase
       end
     end
 
-    should "allow safe override on insert" do
+    should "allow write concern override on insert" do
       @col.insert({:a => 1})
-      @col.insert({:a => 1}, :safe => false)
+      @col.insert({:a => 1}, :w => 0)
     end
 
-    should "propogate safe option on update" do
+    should "propogate write concern option on update" do
       @col.insert({:a => 1})
       @col.insert({:a => 2})
 
@@ -33,14 +35,14 @@ class SafeTest < Test::Unit::TestCase
       end
     end
 
-    should "allow safe override on update" do
+    should "allow write concern override on update" do
       @col.insert({:a => 1})
       @col.insert({:a => 2})
-      @col.update({:a => 2}, {:a => 1}, :safe => false)
+      @col.update({:a => 2}, {:a => 1}, :w => 0)
     end
   end
 
-  context "Safe error objects" do
+  context "Write concern error objects" do
     setup do
       @con = standard_connection
       @db  = @con[MONGO_TEST_DB]
@@ -53,14 +55,14 @@ class SafeTest < Test::Unit::TestCase
 
     should "return object on update" do
       response = @col.update({:a => 1}, {"$set" => {:a => 2}},
-                             :multi => true, :safe => true)
+                             :multi => true)
 
       assert response['updatedExisting']
       assert_equal 3, response['n']
     end
 
     should "return object on remove" do
-      response = @col.remove({}, :safe => true)
+      response = @col.remove({})
       assert_equal 3, response['n']
     end
   end

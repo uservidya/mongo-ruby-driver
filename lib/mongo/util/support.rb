@@ -20,6 +20,18 @@ require 'digest/md5'
 
 module Mongo
   module Support
+    module WriteConcern
+      def get_write_concern(opts, parent=nil)
+        write_concern = {:w => 1, :j => false, :fsync => false, :wtimeout => false}
+        write_concern.merge!(parent.write_concern) if parent
+        write_concern.merge!(opts.select {|k| write_concern.keys.include?(k)})
+      end
+
+      def self.gle?(write_concern)
+        write_concern[:w] > 0 || write_concern[:j] || write_concern[:fsync] || write_concern[:wtimeout]
+      end
+    end
+
     include Mongo::Conversions
     extend self
 

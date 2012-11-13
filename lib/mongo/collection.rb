@@ -20,8 +20,9 @@ module Mongo
   # A named collection of documents in a database.
   class Collection
     include Mongo::Logging
+    include Mongo::Support::WriteConcern
 
-    attr_reader :db, :name, :pk_factory, :hint, :safe
+    attr_reader :db, :name, :pk_factory, :hint, :write_concern
 
     # Read Preference
     attr_accessor :read_preference, :tag_sets, :acceptable_latency
@@ -93,7 +94,7 @@ module Mongo
       @cache_time = @db.cache_time
       @cache      = Hash.new(0)
       unless pk_factory
-        @safe = opts.fetch(:safe, @db.safe)
+        @write_concern = get_write_concern(opts, db)
         if value = opts[:read]
           Mongo::Support.validate_read_preference(value)
         else
@@ -322,12 +323,13 @@ module Mongo
     #
     # @raise [Mongo::OperationFailure] will be raised iff safe mode is enabled and the operation fails.
     def save(doc, opts={})
+      write_concern = get_write_concern(opts, self)
       if doc.has_key?(:_id) || doc.has_key?('_id')
         id = doc[:_id] || doc['_id']
-        update({:_id => id}, doc, :upsert => true, :safe => opts.fetch(:safe, @safe))
+        update({:_id => id}, doc, :upsert => true, :write_concern => write_concern)
         id
       else
-        insert(doc, :safe => opts.fetch(:safe, @safe))
+        insert(doc, write_concern)
       end
     end
 
@@ -368,8 +370,8 @@ module Mongo
     def insert(doc_or_docs, opts={})
       doc_or_docs = [doc_or_docs] unless doc_or_docs.is_a?(Array)
       doc_or_docs.collect! { |doc| @pk_factory.create_pk(doc) }
-      safe = opts.fetch(:safe, @safe)
-      result = insert_documents(doc_or_docs, @name, true, safe, opts)
+      write_concern = get_write_concern(opts, self)
+      result = insert_documents(doc_or_docs, @name, true, write_concern, opts)
       result.size > 1 ? result : result.first
     end
     alias_method :<<, :insert
@@ -401,16 +403,15 @@ module Mongo
     #
     # @core remove remove-instance_method
     def remove(selector={}, opts={})
-      # Initial byte is 0.
-      safe = opts.fetch(:safe, @safe)
+      write_concern = get_write_concern(opts, self)
       message = BSON::ByteBuffer.new("\0\0\0\0")
       BSON::BSON_RUBY.serialize_cstr(message, "#{@db.name}.#{@name}")
       message.put_int(0)
       message.put_binary(BSON::BSON_CODER.serialize(selector, false, true, @connection.max_bson_size).to_s)
 
       instrument(:remove, :database => @db.name, :collection => @name, :selector => selector) do
-        if safe
-          @connection.send_message_with_safe_check(Mongo::Constants::OP_DELETE, message, @db.name, nil, safe)
+        if Mongo::Support::WriteConcern.gle?(write_concern)
+          @connection.send_message_with_safe_check(Mongo::Constants::OP_DELETE, message, @db.name, nil, write_concern)
         else
           @connection.send_message(Mongo::Constants::OP_DELETE, message)
           true
@@ -448,7 +449,7 @@ module Mongo
     # @core update update-instance_method
     def update(selector, document, opts={})
       # Initial byte is 0.
-      safe = opts.fetch(:safe, @safe)
+      write_concern = get_write_concern(opts, self)
       message = BSON::ByteBuffer.new("\0\0\0\0")
       BSON::BSON_RUBY.serialize_cstr(message, "#{@db.name}.#{@name}")
       update_options  = 0
@@ -463,8 +464,8 @@ module Mongo
       message.put_binary(BSON::BSON_CODER.serialize(document, check_keys, true, @connection.max_bson_size).to_s)
 
       instrument(:update, :database => @db.name, :collection => @name, :selector => selector, :document => document) do
-        if safe
-          @connection.send_message_with_safe_check(Mongo::Constants::OP_UPDATE, message, @db.name, nil, safe)
+        if Mongo::Support::WriteConcern.gle?(write_concern)
+          @connection.send_message_with_safe_check(Mongo::Constants::OP_UPDATE, message, @db.name, nil, write_concern)
         else
           @connection.send_message(Mongo::Constants::OP_UPDATE, message)
         end
@@ -987,7 +988,7 @@ module Mongo
       selector.merge!(opts)
 
       begin
-      insert_documents([selector], Mongo::DB::SYSTEM_INDEX_COLLECTION, false, true)
+      insert_documents([selector], Mongo::DB::SYSTEM_INDEX_COLLECTION, false, {:w => 1})
 
       rescue Mongo::OperationFailure => e
         if selector[:dropDups] && e.message =~ /^11000/
@@ -1004,7 +1005,7 @@ module Mongo
     # Sends a Mongo::Constants::OP_INSERT message to the database.
     # Takes an array of +documents+, an optional +collection_name+, and a
     # +check_keys+ setting.
-    def insert_documents(documents, collection_name=@name, check_keys=true, safe=false, flags={})
+    def insert_documents(documents, collection_name=@name, check_keys=true, write_concern={}, flags={})
       if flags[:continue_on_error]
         message = BSON::ByteBuffer.new
         message.put_int(1)
@@ -1036,8 +1037,8 @@ module Mongo
       raise InvalidOperation, "Exceded maximum insert size of 16,777,216 bytes" if message.size > @connection.max_bson_size
 
       instrument(:insert, :database => @db.name, :collection => collection_name, :documents => documents) do
-        if safe
-          @connection.send_message_with_safe_check(Mongo::Constants::OP_INSERT, message, @db.name, nil, safe)
+        if Mongo::Support::WriteConcern.gle?(write_concern)
+          @connection.send_message_with_safe_check(Mongo::Constants::OP_INSERT, message, @db.name, nil, write_concern)
         else
           @connection.send_message(Mongo::Constants::OP_INSERT, message)
         end
