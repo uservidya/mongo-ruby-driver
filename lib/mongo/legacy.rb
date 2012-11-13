@@ -15,28 +15,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ++
+module LegacyWarning
+  @@warn = 0
+  def show_class_warning
+    if @@warn == 0 || (@@warn % 5 == 0)
+      warn "[DEPRECATED] #{self.class.name} has been replaced with #{self.class.superclass.name}."
+    end
+    @@warn += 1
+  end
+end
 
 module Mongo
   # @deprecated Use Mongo::Client instead.
   class Connection < Client
+    include LegacyWarning
     def initialize(host=nil, port=nil, opts={})
-      warn '[DEPRECATED] Mongo::Connection has been replaced with Mongo::Client.'
+      show_class_warning
       super
     end
   end
 
   # @deprecated Use Mongo::ReplSetClient instead.
   class ReplSetConnection < ReplSetClient
+    include LegacyWarning
     def initialize(*args)
-      warn '[DEPRECATED] Mongo::ReplSetConnection has been replaced with Mongo::ReplSetClient.'
+      show_class_warning
       super
     end
   end
 
   # @deprecated Use Mongo::ShardedClient instead.
   class ShardedConnection < ShardedClient
+    include LegacyWarning
     def initialize(*args)
-      warn '[DEPRECATED] Mongo::ShardedConnection has been replaced with Mongo::ShardedClient.'
+      show_class_warning
       super
     end
   end

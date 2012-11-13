@@ -21,7 +21,18 @@ require 'digest/md5'
 module Mongo
   module Support
     module WriteConcern
+      @@warn = 0
+      def get_write_concern_from_legacy(opts)
+        if opts.key? :safe
+          warn "[DEPRECATED] Use 'w' instead of 'safe'." if @@warn == 0 || (@@warn % 5 == 0)
+          value = opts.reject! {|k,v| k == :safe}
+          (!value) ? opts.merge!({:w => 0}) : opts.merge!(value)
+          @@warn += 1
+        end
+      end
+
       def get_write_concern(opts, parent=nil)
+        get_write_concern_from_legacy(opts)
         write_concern = {:w => 1, :j => false, :fsync => false, :wtimeout => false}
         write_concern.merge!(parent.write_concern) if parent
         write_concern.merge!(opts.select {|k| write_concern.keys.include?(k)})
